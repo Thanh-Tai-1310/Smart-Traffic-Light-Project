@@ -1,89 +1,135 @@
 import cv2
 import time
+import json
+import os
 from vehicle_detector import VehicleDetector
 from traffic_analyzer import TrafficAnalyzer
+from traffic_logger import TrafficLogger
+from gui import TrafficControlGUI
 
-def main():
-    # Initialize video captures for both roads
-    cap_road1 = cv2.VideoCapture(0)  # Camera for road 1
-    cap_road2 = cv2.VideoCapture(1)  # Camera for road 2
-    
-    # Initialize detector and analyzer
-    detector = VehicleDetector()
-    analyzer = TrafficAnalyzer()
-    
-    # Initialize timing variables
-    last_analysis_time = time.time()
-    analysis_interval = 60  # Analyze every 60 seconds
-    
-    try:
-        while True:
-            # Read frames from both cameras
-            ret1, frame1 = cap_road1.read()
-            ret2, frame2 = cap_road2.read()
+class TrafficControlApp:
+    def __init__(self):
+        # Load configuration
+        with open('config.json', 'r') as f:
+            self.config = json.load(f)
             
-            if not ret1 or not ret2:
-                print("Error reading from cameras")
-                break
+        # Initialize components
+        self.detector = VehicleDetector()
+        self.analyzer = TrafficAnalyzer()
+        self.logger = TrafficLogger()
+        self.gui = TrafficControlGUI()
+        
+        # Initialize video captures and other variables
+        self.cap_road1 = None
+        self.cap_road2 = None
+        self.is_running = False
+        
+        # Set up GUI callbacks
+        self.gui.process_video = self.process_video
+        
+    def init_video_captures(self):
+        """Initialize video captures with error handling"""
+        try:
+            # Get video paths from config
+            video_path1 = self.config['video_sources']['road1']
+            video_path2 = self.config['video_sources']['road2']
             
-            # Detect vehicles in both roads
-            vehicles_road1 = detector.detect_vehicles(frame1)
-            vehicles_road2 = detector.detect_vehicles(frame2)
+            # Check if video files exist
+            if not os.path.exists(video_path1):
+                print(f"Error: Video file not found: {video_path1}")
+                return False
+            if not os.path.exists(video_path2):
+                print(f"Error: Video file not found: {video_path2}")
+                return False
             
-            # Calculate density for both roads
-            density_road1 = analyzer.calculate_density(vehicles_road1, 'road_1', frame1)
-            density_road2 = analyzer.calculate_density(vehicles_road2, 'road_2', frame2)
+            # Initialize video captures
+            self.cap_road1 = cv2.VideoCapture(video_path1)
+            self.cap_road2 = cv2.VideoCapture(video_path2)
             
-            # Update traffic light status
-            light_changed = analyzer.update_traffic_light()
-            
-            # Get current traffic status
-            status = analyzer.get_traffic_status()
-            
-            # Analyze traffic and get recommendations periodically
-            current_time = time.time()
-            if current_time - last_analysis_time >= analysis_interval:
-                recommendations = analyzer.get_timing_recommendation()
-                print("\n=== Traffic Analysis ===")
-                print(f"Road 1: {status['vehicle_counts']['road_1']} vehicles (density: {status['densities']['road_1']:.3f})")
-                print(f"Road 2: {status['vehicle_counts']['road_2']} vehicles (density: {status['densities']['road_2']:.3f})")
-                print("\nRecommendations:")
-                for rec in recommendations:
-                    print(f"- {rec}")
-                last_analysis_time = current_time
-            
-            # Draw vehicle detections and status information
-            for road_id, frame in [('road_1', frame1), ('road_2', frame2)]:
-                vehicles = vehicles_road1 if road_id == 'road_1' else vehicles_road2
-                frame = detector.draw_detections(frame, vehicles)
+            # Check if videos opened successfully
+            if not self.cap_road1.isOpened():
+                print(f"Error: Could not open {video_path1}. The file might be corrupted.")
+                return False
+            if not self.cap_road2.isOpened():
+                self.cap_road1.release()
+                print(f"Error: Could not open {video_path2}. The file might be corrupted.")
+                return False
                 
-                # Add traffic light status
-                light_color = (0, 255, 0) if road_id == status['current_green'] else (0, 0, 255)
-                cv2.circle(frame, (30, 30), 20, light_color, -1)
-                
-                # Add information
-                cv2.putText(frame, f'Vehicles: {status["vehicle_counts"][road_id]}', (60, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                cv2.putText(frame, f'Density: {status["densities"][road_id]:.2f}', (60, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                
-                if road_id == status['current_green']:
-                    cv2.putText(frame, f'Time: {int(status["time_remaining"])}s', (60, 90),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            return True
             
-            # Show frames
-            cv2.imshow('Road 1', frame1)
-            cv2.imshow('Road 2', frame2)
+        except Exception as e:
+            print(f"Error initializing video captures: {str(e)}")
+            if hasattr(self, 'cap_road1') and self.cap_road1 is not None:
+                self.cap_road1.release()
+            if hasattr(self, 'cap_road2') and self.cap_road2 is not None:
+                self.cap_road2.release()
+            return False
+        
+    def process_video(self):
+        """Main video processing loop"""
+        if not self.init_video_captures():
+            return
             
-            # Break loop if 'q' is pressed
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+        last_analysis_time = time.time()
+        analysis_interval = self.config['analysis']['analysis_interval']
+        
+        try:
+            while self.is_running and not self.gui.is_paused:
+                # Read frames
+                ret1, frame1 = self.cap_road1.read()
+                ret2, frame2 = self.cap_road2.read()
                 
-    finally:
-        # Clean up
-        cap_road1.release()
-        cap_road2.release()
-        cv2.destroyAllWindows()
+                if not ret1 or not ret2:
+                    # Reset videos to start
+                    self.cap_road1.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    self.cap_road2.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
+                
+                # Detect vehicles
+                vehicles_road1 = self.detector.detect_vehicles(frame1)
+                vehicles_road2 = self.detector.detect_vehicles(frame2)
+                
+                # Calculate density
+                self.analyzer.calculate_density(vehicles_road1, 'road_1', frame1)
+                self.analyzer.calculate_density(vehicles_road2, 'road_2', frame2)
+                
+                # Update traffic light status
+                self.analyzer.update_traffic_light()
+                
+                # Get current status
+                status = self.analyzer.get_traffic_status()
+                
+                # Log and analyze periodically
+                current_time = time.time()
+                if current_time - last_analysis_time >= analysis_interval:
+                    recommendations = self.analyzer.get_timing_recommendation()
+                    self.logger.log_traffic_status(status)
+                    self.logger.log_recommendation(recommendations)
+                    last_analysis_time = current_time
+                
+                # Draw detections
+                frame1 = self.detector.draw_detections(frame1, vehicles_road1)
+                frame2 = self.detector.draw_detections(frame2, vehicles_road2)
+                
+                # Update GUI
+                self.gui.update_frame(frame1, frame2)
+                self.gui.update_stats(status)
+                
+                # Control playback speed
+                delay = int(30 / self.gui.speed_scale.get())
+                time.sleep(max(1, delay) / 1000)
+                
+        finally:
+            # Clean up
+            self.cap_road1.release()
+            self.cap_road2.release()
+            self.logger.save_statistics()
+            
+    def run(self):
+        """Start the application"""
+        self.is_running = True
+        self.gui.run()
 
 if __name__ == '__main__':
-    main()
+    app = TrafficControlApp()
+    app.run()

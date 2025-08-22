@@ -14,8 +14,11 @@ class TrafficAnalyzer:
         """Calculate traffic density based on number and size of detected vehicles"""
         height, width, _ = frame.shape
         frame_area = width * height
-        total_vehicle_area = sum(w * h for (_, _, w, h) in vehicles)
-        density = total_vehicle_area / frame_area
+        if len(vehicles) > 0:
+            total_vehicle_area = sum(w * h for (_, _, w, h) in vehicles)
+            density = total_vehicle_area / frame_area
+        else:
+            density = 0.0
         
         self.traffic_density[road_id] = density
         self.vehicle_counts[road_id] = len(vehicles)
