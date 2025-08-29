@@ -1,0 +1,47 @@
+{
+    "video_sources": {
+        "north": "data/north.mp4",
+        "south": "data/south.mp4",
+        "east": "data/east.mp4",
+        "west": "data/west.mp4"
+    },
+    "traffic_light": {
+        "total_cycle_time": 120,
+        "min_green_time": 20,
+        "yellow_time": 3,
+        "phases": {
+            "phase1": ["north", "south"],
+            "phase2": ["east", "west"]
+        }
+    },
+    "analysis": {
+        "density_threshold": 0.3,
+        "analysis_interval": 60,
+        "vehicle_min_size": [30, 30],
+        "vehicle_aspect_ratio": {
+            "min": 0.7,
+            "max": 2.0
+        }
+    },
+    "display": {
+        "show_detection_boxes": true,
+        "show_center_points": true,
+        "show_vehicle_count": true,
+        "show_density": true,
+        "show_traffic_light": true,
+        "window_size": {
+            "width": 1400,
+            "height": 800
+        }
+    },
+    "logging": {
+        "enabled": true,
+        "log_file": "traffic_analysis.log",
+        "save_statistics": true,
+        "statistics_file": "traffic_stats.csv"
+    },
+    "PIL_import": {
+        "specific_modules": ["Image", "ImageTk"],
+        "entire_library": false
+    }
+}
