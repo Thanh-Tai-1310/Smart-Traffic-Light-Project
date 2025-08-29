@@ -32,16 +32,14 @@ env/
 *.swp
 *.swo
 
-# Logs
-*.log
-*.csv
-
 # OS
 .DS_Store
 Thumbs.db
 
-# Keep important files
+# Keep important project files and folders
 !src/
+!data/
 !config.json
 !requirements.txt
 !README.md
+!.gitignore
